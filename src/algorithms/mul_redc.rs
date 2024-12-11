@@ -119,6 +119,40 @@ pub fn square_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64) -> 
     reduce1_carry(result, modulus, carry_outer > 0)
 }
 
+// Computes a^2 * 2^(-BITS) mod modulus
+/// Requires that `inv` is the inverse of `-modulus[0]` modulo `2^64`.
+/// Requires that `a` is less than `modulus`.
+#[inline]
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn square_redc_carryless<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64) -> [u64; N] {
+    debug_assert_eq!(inv.wrapping_mul(modulus[0]), u64::MAX);
+    debug_assert!(less_than(a, modulus));
+
+    let mut result = [0; N];
+    for i in 0..N {
+        // Add limb product
+        let value = carryless_mul_add(a[i], a[i], result[i]);
+        result[i] = value;
+        for j in (i + 1)..N {
+            let value = carryless_double_mul_add(a[i], a[j], result[j]);
+            result[j] = value;
+        }
+
+        // Add m times modulus to result and shift one limb
+        let m = result[0].wrapping_mul(inv);
+        let value = carryless_mul_add(m, modulus[0], result[0]);
+        debug_assert_eq!(value, 0);
+        for j in 1..N {
+            let value = carryless_mul_add(modulus[j], m, result[j]);
+            result[j - 1] = value;
+        }
+    }
+
+    // Compute reduced product.
+    reduce1_carry(result, modulus, false)
+}
+
 #[inline]
 #[must_use]
 fn less_than<const N: usize>(lhs: [u64; N], rhs: [u64; N]) -> bool {
@@ -173,6 +207,15 @@ const fn carrying_mul_add(lhs: u64, rhs: u64, add: u64, carry: u64) -> (u64, u64
     (wide as u64, (wide >> 64) as u64)
 }
 
+/// Compute `lhs * rhs + add`.
+/// The output can not overflow for any input values.
+#[inline]
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+const fn carryless_mul_add(lhs: u64, rhs: u64, add: u64) -> u64 {
+    lhs.wrapping_mul(rhs).wrapping_add(add)
+}
+
 /// Compute `2 * lhs * rhs + add + carry_lo + 2^64 * carry_hi`.
 /// The output can not overflow for any input values.
 #[inline]
@@ -192,6 +235,17 @@ const fn carrying_double_mul_add(
         .wrapping_add((carry_hi as u128) << 64);
     let (wide, carry_2) = wide.overflowing_add(carries);
     (wide as u64, (wide >> 64) as u64, carry_1 | carry_2)
+}
+
+/// Compute `2 * lhs * rhs + add`.
+/// The output can not overflow for any input values.
+#[inline]
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+const fn carryless_double_mul_add(lhs: u64, rhs: u64, add: u64) -> u64 {
+    let wide = lhs.wrapping_mul(rhs);
+    let double_wide = wide.wrapping_add(wide);
+    double_wide.wrapping_add(add)
 }
 
 // Helper while [Rust#85532](https://github.com/rust-lang/rust/issues/85532) stabilizes.
@@ -215,13 +269,18 @@ const fn borrowing_sub(lhs: u64, rhs: u64, borrow: bool) -> (u64, bool) {
 #[cfg(test)]
 mod test {
     use core::ops::Neg;
+    use std::time::Instant;
 
     use super::{
         super::{addmul, div},
         *,
     };
     use crate::{aliases::U64, const_for, nlimbs, Uint};
-    use proptest::{prop_assert_eq, proptest};
+    use proptest::{
+        prelude::{any, prop, Arbitrary, Strategy},
+        prop_assert_eq, proptest,
+        strategy::ValueTree,
+    };
 
     fn modmul<const N: usize>(a: [u64; N], b: [u64; N], modulus: [u64; N]) -> [u64; N] {
         // Compute a * b
@@ -285,5 +344,63 @@ mod test {
                 prop_assert_eq!(result, expected);
             });
         });
+    }
+
+    #[test]
+    fn compare_square_redc_bn254_u305() {
+        const BITS: usize = 305;
+        const LIMBS: usize = nlimbs(BITS);
+        type U305 = Uint<BITS, LIMBS>;
+        const MOD: U305 = uint!(
+            21888242871839275222246405745257275088548364400416034343698204186575808495617_U305
+        );
+        const MOD_INV: u64 = 14042775128853446655;
+
+        const RUNS: usize = 1000_000;
+
+        // Define the strategy for generating U305 values
+        let strategy = prop::array::uniform5(any::<u64>()).prop_map(|mut limbs| {
+            limbs[4] &= 0xff; // keep only 8 bits in the last limb
+            Uint::<BITS, LIMBS>::from_limbs(limbs)
+        });
+
+        let mut total_duration_carryless = 0;
+        let mut total_duration_square = 0;
+
+        for _ in 0..RUNS {
+            // Generate random input
+            // Generate a random `Uint`
+            let mut a = strategy
+                .new_tree(&mut proptest::test_runner::TestRunner::deterministic())
+                .unwrap()
+                .current();
+            a %= MOD; // Ensure `a` is less than MOD
+
+            let a_limbs = *a.as_limbs();
+            let m_limbs = *MOD.as_limbs();
+
+            // Time `square_redc_carryless`
+            let start = Instant::now();
+            let _ = square_redc_carryless(a_limbs, m_limbs, MOD_INV);
+            total_duration_carryless += start.elapsed().as_nanos();
+
+            // Time `square_redc`
+            let start = Instant::now();
+            let _ = square_redc(a_limbs, m_limbs, MOD_INV);
+            total_duration_square += start.elapsed().as_nanos();
+        }
+
+        let avg_duration_carryless = total_duration_carryless as f64 / RUNS as f64;
+        let avg_duration_square = total_duration_square as f64 / RUNS as f64;
+
+        // Print results
+        println!(
+            "`square_redc_carryless` over {} runs: {:.2} ns",
+            RUNS, avg_duration_carryless
+        );
+        println!(
+            "`square_redc` over {} runs: {:.2} ns",
+            RUNS, avg_duration_square
+        );
     }
 }
