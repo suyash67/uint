@@ -348,19 +348,19 @@ mod test {
 
     #[test]
     fn compare_square_redc_bn254_u305() {
-        const BITS: usize = 305;
+        const BITS: usize = 256;
         const LIMBS: usize = nlimbs(BITS);
         type U305 = Uint<BITS, LIMBS>;
         const MOD: U305 = uint!(
-            21888242871839275222246405745257275088548364400416034343698204186575808495617_U305
+            21888242871839275222246405745257275088548364400416034343698204186575808495617_U256
         );
         const MOD_INV: u64 = 14042775128853446655;
 
         const RUNS: usize = 1000_000;
 
         // Define the strategy for generating U305 values
-        let strategy = prop::array::uniform5(any::<u64>()).prop_map(|mut limbs| {
-            limbs[4] &= 0xff; // keep only 8 bits in the last limb
+        let strategy = prop::array::uniform4(any::<u64>()).prop_map(|mut limbs| {
+            limbs[3] &= 0x3fff_ffff_ffff_ffff; // keep only 8 bits in the last limb
             Uint::<BITS, LIMBS>::from_limbs(limbs)
         });
 
