@@ -130,11 +130,11 @@ pub fn lazy_mul_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv:
     debug_assert!(less_than(a, modulus));
 
     let mut result = [0u64; N];
-    let mut intermediate_matrix = [[(0u64, 0u64); N]; N];
+    let mut intermediate_matrix = [[0u128; N]; N];
     let mut carry_1 = 0u64;
     let mut carry_2 = 0u64;
-    let mut carry_flag = false;
-    let mut carry_flag_2 = false;
+
+    // (j || i)
 
     for i in 0..N {
         // case j = 0
@@ -146,51 +146,24 @@ pub fn lazy_mul_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv:
 
         // case j = 1, ..., N - 1
         for j in 1..N {
+            let mut temp_mult = 0u128;
             if i <= j {
                 // Upper half of matrix: perform mult
-                let aj_times_ai = (a[j] as u128).wrapping_mul(a[i] as u128);
-                let temp_result =
-                    (aj_times_ai.wrapping_add(result[j] as u128)).wrapping_add(carry_2 as u128);
-
-                // let (exp_lo, exp_hi) = carrying_mul_add(a[j], a[i], result[j], carry_2);
-
-                result[j] = temp_result as u64;
-                carry_2 = (temp_result >> 64) as u64;
-                intermediate_matrix[i][j] = (aj_times_ai as u64, (aj_times_ai >> 64) as u64);
-
-                // assert_eq!(exp_lo, result[j]);
-                // assert_eq!(exp_hi, carry_2);
+                temp_mult = (a[j] as u128).wrapping_mul(a[i] as u128);
+                if i != j {
+                    intermediate_matrix[i][j] = temp_mult;
+                }
             } else {
-                // let (exp_lo, exp_hi) = carrying_mul_add(a[j], a[i], result[j], carry_2);
-
                 // Lower half of matrix: no mult, only add
-                let (aj_times_ai_low, aj_times_ai_high) = intermediate_matrix[j][i];
-
-                // TODO: check what we get from table
-                // let aj_times_ai = (a[j] as u128).wrapping_mul(a[i] as u128);
-                // println!("ground truth:\n{:#032X}", aj_times_ai);
-                // println!(
-                //     "table entry:\n{:#032X}, {:#032X}",
-                //     aj_times_ai_low, aj_times_ai_high
-                // );
-
-                // (        || result)
-                // (        || carry_2)
-                // (hi      || lo    )
-                //
-                (result[j], carry_flag) = result[j].overflowing_add(aj_times_ai_low);
-                (result[j], carry_flag_2) = result[j].overflowing_add(carry_2);
-
-                (carry_2, _) = aj_times_ai_high.overflowing_add(carry_flag as u64);
-                (carry_2, _) = carry_2.overflowing_add(carry_flag_2 as u64);
-
-                // // DEBUG
-                // println!("  result[{}] = {:#016X}", j, result[j]);
-                // println!("  exp_lo     = {:#016X}", exp_lo);
-
-                // assert_eq!(exp_lo, result[j]);
-                // assert_eq!(exp_hi, carry_2);
+                temp_mult = intermediate_matrix[j][i];
             }
+
+            let temp_result = temp_mult
+                .wrapping_add(result[j] as u128)
+                .wrapping_add(carry_2 as u128);
+
+            result[j] = temp_result as u64;
+            carry_2 = (temp_result >> 64) as u64;
 
             (result[j - 1], carry_1) = carrying_mul_add(m, modulus[j], result[j], carry_1);
         }
