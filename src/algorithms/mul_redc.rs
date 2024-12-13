@@ -125,16 +125,64 @@ pub fn mul_python_redc<const N: usize>(
 /// Requires that `a` and `b` are less than `modulus`.
 #[inline]
 #[must_use]
-pub fn lazy_mul_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64) -> [u64; N] {
+pub fn sqr_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64) -> [u64; N] {
     debug_assert_eq!(inv.wrapping_mul(modulus[0]), u64::MAX);
     debug_assert!(less_than(a, modulus));
 
     let mut result = [0u64; N];
-    let mut intermediate_matrix = [[0u128; N]; N];
     let mut carry_1 = 0u64;
     let mut carry_2 = 0u64;
 
-    // (j || i)
+    for i in 0..N {
+        // case j = 0
+        let (value, local_carry) = carrying_mul_add(a[0], a[i], result[0], 0);
+        result[0] = value;
+        carry_2 = local_carry;
+
+        let m = result[0].wrapping_mul(inv);
+
+        // c1 = (t[0] + m * p[0]) / W
+        let (_, local_carry) = carrying_mul_add(m, modulus[0], result[0], 0);
+        carry_1 = local_carry;
+
+        // case j = 1, ..., N - 1
+        for j in 1..N {
+            let (value, local_carry) = carrying_mul_add(a[j], a[i], result[j], carry_2);
+            result[j] = value;
+            carry_2 = local_carry;
+
+            let (value, local_carry) = carrying_mul_add(m, modulus[j], result[j], carry_1);
+            result[j - 1] = value;
+            carry_1 = local_carry;
+        }
+
+        let (value, _) = carry_1.overflowing_add(carry_2);
+        result[N - 1] = value;
+    }
+
+    reduce1_carry(result, modulus, false)
+}
+
+/// Computes a * b * 2^(-BITS) mod modulus
+///
+/// Requires that `inv` is the inverse of `-modulus[0]` modulo `2^64`.
+/// Requires that `a` and `b` are less than `modulus`.
+#[inline]
+#[must_use]
+pub fn lazy_mul_python_redc<const N: usize, const I: usize>(
+    a: [u64; N],
+    modulus: [u64; N],
+    inv: u64,
+) -> [u64; N] {
+    debug_assert_eq!(inv.wrapping_mul(modulus[0]), u64::MAX);
+    debug_assert!(less_than(a, modulus));
+
+    let mut result = [0u64; N];
+    let mut intermediate_array: [u128; I] = [0u128; I];
+    let mut carry_1 = 0u64;
+    let mut carry_2 = 0u64;
+
+    let calc_index = |i: usize, j: usize| -> usize { N * i - ((i * i + i) >> 1) + j };
 
     for i in 0..N {
         // case j = 0
@@ -150,12 +198,10 @@ pub fn lazy_mul_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv:
             if i <= j {
                 // Upper half of matrix: perform mult
                 temp_mult = (a[j] as u128).wrapping_mul(a[i] as u128);
-                if i != j {
-                    intermediate_matrix[i][j] = temp_mult;
-                }
+                intermediate_array[calc_index(i, j)] = temp_mult;
             } else {
                 // Lower half of matrix: no mult, only add
-                temp_mult = intermediate_matrix[j][i];
+                temp_mult = intermediate_array[calc_index(j, i)];
             }
 
             let temp_result = temp_mult
@@ -823,7 +869,7 @@ mod test {
 
             let result = mul_base(mul_python_redc(a, b, m, MOD_INV), m);
             let result_1 = mul_base(mul_redc(a, b, m, MOD_INV), m);
-            let result_2 = mul_base(lazy_mul_python_redc(a, m, MOD_INV), m);
+            let result_2 = mul_base(lazy_mul_python_redc::<4, 10>(a, m, MOD_INV), m);
             let expected = modmul(a, b, m);
 
             prop_assert_eq!(result, expected);
@@ -859,7 +905,7 @@ mod test {
 
             let result = mul_base(mul_python_redc(a, a, m, MOD_INV), m);
             let result_1 = mul_base(mul_redc(a, a, m, MOD_INV), m);
-            let result_2 = mul_base(lazy_mul_python_redc(a, m, MOD_INV), m);
+            let result_2 = mul_base(lazy_mul_python_redc::<4, 10>(a, m, MOD_INV), m);
             let expected = modmul(a, a, m);
 
             prop_assert_eq!(result, expected);
@@ -1039,7 +1085,7 @@ mod test {
 
             // Time squaring using `mul_python_redc`
             let start = Instant::now();
-            let result_a = mul_python_redc(a_limbs, a_limbs, m_limbs, MOD_INV);
+            let result_a = sqr_python_redc(a_limbs, m_limbs, MOD_INV);
             total_duration_sqr_python += start.elapsed().as_nanos();
 
             // Time squaring using `mul_redc`
@@ -1051,7 +1097,7 @@ mod test {
 
             // Time squaring using `lazy_mul_python_redc`
             let start = Instant::now();
-            let result_a = lazy_mul_python_redc(a_limbs, m_limbs, MOD_INV);
+            let result_a = lazy_mul_python_redc::<4, 10>(a_limbs, m_limbs, MOD_INV);
             total_duration_lazy_sqr += start.elapsed().as_nanos();
 
             assert_eq!(result_a, result_b);
