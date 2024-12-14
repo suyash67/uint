@@ -20,7 +20,7 @@ pub use self::{
     div::div,
     gcd::{gcd, gcd_extended, inv_mod, LehmerMatrix},
     mul::{add_nx1, addmul, addmul_n, addmul_nx1, mul_nx1, submul_nx1},
-    mul_redc::{mul_redc, square_redc},
+    mul_redc::{mul_redc, mul_redc_cios, square_redc, square_redc_cios, square_redc_cios_optimal},
     ops::{adc, sbb},
     shift::{shift_left_small, shift_right_small},
 };

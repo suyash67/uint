@@ -75,7 +75,7 @@ pub fn mul_redc<const N: usize>(a: [u64; N], b: [u64; N], modulus: [u64; N], inv
 /// Requires that `a` and `b` are less than `modulus`.
 #[inline]
 #[must_use]
-pub fn mul_python_redc<const N: usize>(
+pub fn mul_redc_cios<const N: usize>(
     a: [u64; N],
     b: [u64; N],
     modulus: [u64; N],
@@ -125,7 +125,7 @@ pub fn mul_python_redc<const N: usize>(
 /// Requires that `a` and `b` are less than `modulus`.
 #[inline]
 #[must_use]
-pub fn sqr_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64) -> [u64; N] {
+pub fn square_redc_cios<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64) -> [u64; N] {
     debug_assert_eq!(inv.wrapping_mul(modulus[0]), u64::MAX);
     debug_assert!(less_than(a, modulus));
 
@@ -169,7 +169,7 @@ pub fn sqr_python_redc<const N: usize>(a: [u64; N], modulus: [u64; N], inv: u64)
 /// Requires that `a` and `b` are less than `modulus`.
 #[inline]
 #[must_use]
-pub fn lazy_mul_python_redc<const N: usize, const I: usize>(
+pub fn square_redc_cios_optimal<const N: usize, const I: usize>(
     a: [u64; N],
     modulus: [u64; N],
     inv: u64,
@@ -855,7 +855,7 @@ mod test {
         // let b = *b_val.as_limbs();
         let m: [u64; 4] = *MODULUS.as_limbs();
 
-        // let result = mul_base(mul_python_redc(a, b, m, MOD_INV), m);
+        // let result = mul_base(mul_redc_cios(a, b, m, MOD_INV), m);
         // let result_1 = mul_base(mul_redc(a, b, m, MOD_INV), m);
         // let expected = modmul(a, b, m);
         // assert_eq!(result, expected);
@@ -867,9 +867,9 @@ mod test {
             let a = *a_value.as_limbs();
             let b = *b_value.as_limbs();
 
-            let result = mul_base(mul_python_redc(a, b, m, MOD_INV), m);
+            let result = mul_base(mul_redc_cios(a, b, m, MOD_INV), m);
             let result_1 = mul_base(mul_redc(a, b, m, MOD_INV), m);
-            let result_2 = mul_base(lazy_mul_python_redc::<4, 10>(a, m, MOD_INV), m);
+            let result_2 = mul_base(square_redc_cios_optimal::<4, 10>(a, m, MOD_INV), m);
             let expected = modmul(a, b, m);
 
             prop_assert_eq!(result, expected);
@@ -893,7 +893,7 @@ mod test {
         // let a = *a_val.as_limbs();
         let m: [u64; 4] = *MODULUS.as_limbs();
 
-        // let result = mul_base(lazy_mul_python_redc(a, m, MOD_INV), m);
+        // let result = mul_base(square_redc_cios_optimal(a, m, MOD_INV), m);
         // let expected = modmul(a, a, m);
         // assert_eq!(result, expected);
 
@@ -903,9 +903,9 @@ mod test {
             let a = *a_value.as_limbs();
             // let b = *b_value.as_limbs();
 
-            let result = mul_base(mul_python_redc(a, a, m, MOD_INV), m);
+            let result = mul_base(mul_redc_cios(a, a, m, MOD_INV), m);
             let result_1 = mul_base(mul_redc(a, a, m, MOD_INV), m);
-            let result_2 = mul_base(lazy_mul_python_redc::<4, 10>(a, m, MOD_INV), m);
+            let result_2 = mul_base(square_redc_cios_optimal::<4, 10>(a, m, MOD_INV), m);
             let expected = modmul(a, a, m);
 
             prop_assert_eq!(result, expected);
@@ -1071,9 +1071,9 @@ mod test {
             let b_limbs = *b.as_limbs();
             let m_limbs = *MOD.as_limbs();
 
-            // Time `mul_python_redc`
+            // Time `mul_redc_cios`
             let start = Instant::now();
-            let result_a = mul_python_redc(a_limbs, b_limbs, m_limbs, MOD_INV);
+            let result_a = mul_redc_cios(a_limbs, b_limbs, m_limbs, MOD_INV);
             total_duration_mul_python += start.elapsed().as_nanos();
 
             // Time `mul_redc`
@@ -1083,9 +1083,9 @@ mod test {
 
             assert_eq!(result_a, result_b);
 
-            // Time squaring using `mul_python_redc`
+            // Time squaring using `mul_redc_cios`
             let start = Instant::now();
-            let result_a = sqr_python_redc(a_limbs, m_limbs, MOD_INV);
+            let result_a = square_redc_cios(a_limbs, m_limbs, MOD_INV);
             total_duration_sqr_python += start.elapsed().as_nanos();
 
             // Time squaring using `mul_redc`
@@ -1095,14 +1095,14 @@ mod test {
 
             assert_eq!(result_a, result_b);
 
-            // Time squaring using `lazy_mul_python_redc`
+            // Time squaring using `square_redc_cios_optimal`
             let start = Instant::now();
-            let result_a = lazy_mul_python_redc::<4, 10>(a_limbs, m_limbs, MOD_INV);
+            let result_a = square_redc_cios_optimal::<4, 10>(a_limbs, m_limbs, MOD_INV);
             total_duration_lazy_sqr += start.elapsed().as_nanos();
 
             assert_eq!(result_a, result_b);
 
-            // Time squaring using `lazy_mul_python_redc`
+            // Time squaring using `square_redc_cios_optimal`
             let start = Instant::now();
             let result_a = square_redc(a_limbs, m_limbs, MOD_INV);
             total_duration_sqr_remco += start.elapsed().as_nanos();

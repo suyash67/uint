@@ -179,6 +179,52 @@ impl<const BITS: usize, const LIMBS: usize> Uint<BITS, LIMBS> {
         debug_assert!(result < modulus);
         result
     }
+
+    /// Montgomery multiplication (with optimal CIOS algorithm).
+    ///
+    /// See [Self::mul_redc_cios].
+    #[inline]
+    #[must_use]
+    pub fn mul_redc_cios(self, other: Self, modulus: Self, inv: u64) -> Self {
+        if BITS == 0 {
+            return Self::ZERO;
+        }
+        let result = algorithms::mul_redc_cios(self.limbs, other.limbs, modulus.limbs, inv);
+        let result = Self::from_limbs(result);
+        debug_assert!(result < modulus);
+        result
+    }
+
+    /// Montgomery squaring (with simple CIOS algorithm).
+    ///
+    /// See [Self::mul_redc_cios].
+    #[inline]
+    #[must_use]
+    pub fn square_redc_cios(self, modulus: Self, inv: u64) -> Self {
+        if BITS == 0 {
+            return Self::ZERO;
+        }
+        let result = algorithms::square_redc_cios(self.limbs, modulus.limbs, inv);
+        let result = Self::from_limbs(result);
+        debug_assert!(result < modulus);
+        result
+    }
+
+    /// Montgomery squaring (with optimal CIOS algorithm).
+    ///
+    /// See [Self::mul_redc_cios].
+    #[inline]
+    #[must_use]
+    pub fn square_redc_cios_optimal<const IM_SIZE: usize>(self, modulus: Self, inv: u64) -> Self {
+        if BITS == 0 {
+            return Self::ZERO;
+        }
+        let result =
+            algorithms::square_redc_cios_optimal::<LIMBS, IM_SIZE>(self.limbs, modulus.limbs, inv);
+        let result = Self::from_limbs(result);
+        debug_assert!(result < modulus);
+        result
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 mod add;
 mod algorithms;
+mod bn254;
 mod div;
 mod log;
 mod modular;
@@ -15,5 +16,6 @@ pub fn group(c: &mut criterion::Criterion) {
     log::group(c);
     root::group(c);
     modular::group(c);
+    bn254::group(c);
     algorithms::group(c);
 }
